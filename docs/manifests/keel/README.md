@@ -71,8 +71,13 @@ To remove it: `kubectl delete -f docs/manifests/keel/`.
 - **Helm provider** — `HELM3_PROVIDER` is `"true"` to match the chart default.
   Set it to `"false"` if the cluster has no Helm releases; image polling and the
   Kubernetes provider are unaffected.
-- **RBAC** — mirrors the chart's default ClusterRole. If you only use the
-  Kubernetes provider, you can trim the rules you do not need.
+- **RBAC** — `11-clusterrole.yaml` follows the chart's default ClusterRole, with
+  two deliberate differences: `pods/portforward` is omitted (this Keel version
+  never calls it), and the `secrets`/`configmaps` rules are marked as
+  Helm-provider-only in comments, since Keel reads those only through Helm's
+  release-storage driver. Set `HELM3_PROVIDER="false"` and drop those two rules if
+  the cluster has no Helm releases. Keel is cluster-scoped by design — it watches
+  workloads across namespaces — hence a ClusterRole rather than a namespaced Role.
 - **Service** — `40-service.yaml` is a ClusterIP, so Keel is reachable only
   inside the cluster. Registry webhooks need an externally reachable address;
   change the Service type or put an Ingress in front of it.
