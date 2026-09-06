@@ -124,14 +124,13 @@ it supports upgrades and configuration via `values.yaml`.
 
 If you can't use Helm, or want a quick self-hosted install, use the ready-to-run
 Kubernetes manifests in [docs/manifests/keel](docs/manifests/keel/). These
-include the Deployment, Service, RBAC, and a basic-auth Secret with clearly
+include the Deployment, Service, RBAC, and a Basic Auth Secret with clearly
 marked placeholders:
 
 ```bash
-# 1. Set your basic-auth credentials in docs/manifests/keel/secret.yaml
-#    (or leave basic auth disabled)
-# 2. Apply everything:
-kubectl apply -R -f docs/manifests/keel/
+# 1. Set your Basic Auth password in docs/manifests/keel/20-secret.yaml
+# 2. Apply the set (filename order keeps the namespace and RBAC first):
+kubectl apply -f docs/manifests/keel/
 ```
 
 See [docs/manifests/keel/README.md](docs/manifests/keel/README.md) for the

@@ -1,57 +1,86 @@
 # Keel static Kubernetes manifests
-#
-# This directory provides a ready-to-install set of Kubernetes manifests for
-# deploying Keel without Helm. These manifests are intended as an alternative to
-# the maintained Helm chart (see chart/keel).
-#
-# WARNING: The Helm chart is the recommended way to install Keel because it
-# supports upgrades, configuration via values, and keeps the deployment in sync
-# with future releases. Use these static manifests only if you cannot use Helm
-# or need a quick self-hosted install.
-#
-# NOTE: The sunstone.dev installation helper previously referenced in some
-# guides is no longer available. Use either the Helm chart (preferred) or the
-# manifests in this directory as a self-hosted replacement.
 
-## Usage
+Ready-to-apply manifests for running Keel without Helm. The Helm chart in
+[`chart/keel`](../../../chart/keel) is the recommended install method: it is the
+one that receives release testing, and it handles upgrades and configuration
+through `values.yaml`. Use these manifests when you cannot use Helm, or want to
+see exactly what Keel runs.
 
-1. Edit the Secret (`secret.yaml`) to set your basic-auth credentials, or set
-   `basicauth.enabled` to `false` in the values and remove the secret.
-2. Apply the manifests in order:
+If you arrived from an older guide that installed Keel through a hosted install
+helper, note that those helpers are no longer reachable — install with the Helm
+chart or with the manifests here.
+
+## Files
+
+Applied in filename order; the numeric prefixes keep dependencies first
+(namespace, then RBAC, then the workloads that consume them).
+
+| File | Purpose |
+| --- | --- |
+| `00-namespace.yaml` | `keel` namespace |
+| `10-service-account.yaml` | Service Account used by the Deployment and ClusterRoleBinding |
+| `11-clusterrole.yaml` | Permissions Keel needs to watch and update workloads |
+| `12-clusterrolebinding.yaml` | Binds the ClusterRole to the Service Account |
+| `20-secret.yaml` | Basic Auth password (placeholder — edit before applying) |
+| `30-deployment.yaml` | Keel Deployment, probes on `/healthz:9300` |
+| `40-service.yaml` | ClusterIP Service for the Keel API/UI and registry webhooks |
+
+## Install
+
+1. Set your Basic Auth password in `20-secret.yaml`, or create the secret
+   yourself instead of applying that file:
 
    ```bash
-   kubectl apply -f docs/manifests/keel/namespace.yaml
-   kubectl apply -f docs/manifests/keel/service-account.yaml
-   kubectl apply -f docs/manifests/keel/clusterrole.yaml
-   kubectl apply -f docs/manifests/keel/clusterrolebinding.yaml
-   kubectl apply -f docs/manifests/keel/secret.yaml
-   kubectl apply -f docs/manifests/keel/deployment.yaml
-   kubectl apply -f docs/manifests/keel/service.yaml
+   kubectl -n keel create secret generic keel \
+     --from-literal=BASIC_AUTH_PASSWORD='your-password'
    ```
 
-   Or apply everything at once:
+2. Apply the directory. Ordering is encoded in the filenames, so a single apply
+   is safe on an empty cluster:
 
    ```bash
-   kubectl apply -R -f docs/manifests/keel/
+   kubectl apply -f docs/manifests/keel/
    ```
 
-## Placeholders / Notes
+3. Verify Keel is up:
 
-- `IMAGE` and `IMAGE_TAG` — set these to the Keel container image and version
-  you want to run. The latest release is published under the `keelhq/keel`
-  Docker Hub repository and `ghcr.io/keel-hq/keel` (GHCR). A nightly build from
-  `master` is available under the `nightly` tag.
-- `BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD` — credentials for the Keel Admin UI
-  and API. When `basicauth.enabled` is `true`, a Secret named `keel` must
-  contain a `BASIC_AUTH_PASSWORD` key holding the base64-encoded password.
-  Update the Secret, or set `basicauth.enabled: false` and remove the Secret
-  and `envFrom` reference if you do not want basic auth.
+   ```bash
+   kubectl -n keel get pods -l app=keel
+   kubectl -n keel port-forward deploy/keel 9300:9300
+   curl -s http://127.0.0.1:9300/healthz
+   ```
+
+   The Admin UI is at `http://127.0.0.1:9300` and authenticates with the Basic
+   Auth user from `30-deployment.yaml` (`admin`) plus the password from the
+   secret.
+
+To remove it: `kubectl delete -f docs/manifests/keel/`.
+
+## Placeholders and notes
+
+- **Image** — `30-deployment.yaml` pins `ghcr.io/keel-hq/keel:0.22.1`, the
+  release `chart/keel/Chart.yaml` currently declares as `appVersion`. Bump it
+  manually when you upgrade; unlike the chart, these manifests cannot
+  self-update. `keelhq/keel` on Docker Hub carries the same releases, and a
+  `nightly` tag exists on both registries, but nightly builds are pre-releases
+  and are not supported in production.
+- **Basic Auth** — Keel requires `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` to
+  be set together or both unset, and exits otherwise. `BASIC_AUTH_USER` is an
+  env var in `30-deployment.yaml`; the password comes from the secret through
+  `envFrom`. Turning Basic Auth off means removing both.
+- **Helm provider** — `HELM3_PROVIDER` is `"true"` to match the chart default.
+  Set it to `"false"` if the cluster has no Helm releases; image polling and the
+  Kubernetes provider are unaffected.
+- **RBAC** — mirrors the chart's default ClusterRole. If you only use the
+  Kubernetes provider, you can trim the rules you do not need.
+- **Service** — `40-service.yaml` is a ClusterIP, so Keel is reachable only
+  inside the cluster. Registry webhooks need an externally reachable address;
+  change the Service type or put an Ingress in front of it.
 
 ## Prerequisites
 
-- [Helm](https://docs.helm.sh/using_helm/#installing-helm) is not required for
-  this install method, but is recommended.
-- Kubernetes cluster access and `kubectl` configured.
+- `kubectl` configured for a Kubernetes cluster.
+- Helm is not required for this install method.
 
-See the main [README](../../readme.md) for the recommended Helm install
-instructions and configuration reference.
+See the main [README](../../../readme.md) for the recommended Helm install
+instructions and the configuration reference.

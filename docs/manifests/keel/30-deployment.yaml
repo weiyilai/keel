@@ -18,15 +18,13 @@ spec:
       serviceAccountName: keel
       containers:
         - name: keel
-          # PLACEHOLDER: set the container image and tag you want to run.
-          # Latest releases: keelhq/keel (Docker Hub) or ghcr.io/keel-hq/keel (GHCR).
-          # A nightly build from master is published under the "nightly" tag.
-          image: "ghcr.io/keel-hq/keel:nightly"
-          imagePullPolicy: Always
+          # Pinned to the release chart/keel currently ships (Chart.yaml
+          # appVersion). Bump this when you upgrade. A `nightly` tag exists on
+          # ghcr.io/keel-hq/keel and keelhq/keel, but it is a pre-release and is
+          # not supported in production.
+          image: "ghcr.io/keel-hq/keel:0.22.1"
+          imagePullPolicy: IfNotPresent
           command: ["/bin/keel"]
-          # PLACEHOLDER: set BASIC_AUTH_PASSWORD in the keel Secret to enable
-          # basic auth on the Admin UI and API. Leave basicauth.enabled false
-          # and remove the envFrom block to disable basic auth.
           env:
             - name: NAMESPACE
               valueFrom:
@@ -34,15 +32,27 @@ spec:
                   fieldPath: metadata.namespace
             - name: AUTH_MODE
               value: "legacy"
+            # Basic Auth username for the Admin UI and API. Keel requires
+            # BASIC_AUTH_USER and BASIC_AUTH_PASSWORD to be set together or both
+            # unset, so this must stay paired with BASIC_AUTH_PASSWORD in
+            # 20-secret.yaml. To turn off Basic Auth, delete this variable *and*
+            # the envFrom block below, then redeploy.
+            - name: BASIC_AUTH_USER
+              value: "admin"
             - name: POLL
               value: "true"
             - name: POLL_DEFAULTSCHEDULE
               value: "@every 1m"
+            # Tracks images of Helm releases. Set to "false" if this cluster has
+            # no Helm releases; image polling and the Kubernetes provider are
+            # unaffected.
             - name: HELM3_PROVIDER
               value: "true"
             - name: NOTIFICATION_LEVEL
               value: "info"
-          # PLACEHOLDER: remove this block if you are not using basic auth.
+          # Supplies BASIC_AUTH_PASSWORD (and any other secrets Keel reads from
+          # the environment). Remove this block only together with
+          # BASIC_AUTH_USER above.
           envFrom:
             - secretRef:
                 name: keel
