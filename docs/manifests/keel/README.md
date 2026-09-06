@@ -58,12 +58,12 @@ To remove it: `kubectl delete -f docs/manifests/keel/`.
 
 ## Placeholders and notes
 
-- **Image** — `30-deployment.yaml` pins `ghcr.io/keel-hq/keel:0.22.1`, the
-  release `chart/keel/Chart.yaml` currently declares as `appVersion`. Bump it
-  manually when you upgrade; unlike the chart, these manifests cannot
-  self-update. `keelhq/keel` on Docker Hub carries the same releases, and a
-  `nightly` tag exists on both registries, but nightly builds are pre-releases
-  and are not supported in production.
+- **Image** — `30-deployment.yaml` pins `ghcr.io/keel-hq/keel:0.22.3`, matching
+  the `appVersion` in `chart/keel/Chart.yaml` at the time of writing. Check that
+  file for the newest release and bump the pin manually; unlike the chart, these
+  manifests cannot self-update. `keelhq/keel` on Docker Hub carries the same
+  releases, and a `nightly` tag exists on both registries, but nightly builds are
+  pre-releases and are not supported in production.
 - **Basic Auth** — Keel requires `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` to
   be set together or both unset, and exits otherwise. `BASIC_AUTH_USER` is an
   env var in `30-deployment.yaml`; the password comes from the secret through

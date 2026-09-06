@@ -18,11 +18,12 @@ spec:
       serviceAccountName: keel
       containers:
         - name: keel
-          # Pinned to the release chart/keel currently ships (Chart.yaml
-          # appVersion). Bump this when you upgrade. A `nightly` tag exists on
-          # ghcr.io/keel-hq/keel and keelhq/keel, but it is a pre-release and is
-          # not supported in production.
-          image: "ghcr.io/keel-hq/keel:0.22.1"
+          # Pinned to the release chart/keel currently declares as appVersion in
+          # chart/keel/Chart.yaml — check there (or the GitHub releases page) for
+          # the newest version. A `nightly` tag exists on ghcr.io/keel-hq/keel
+          # and keelhq/keel, but it is a pre-release and is not supported in
+          # production.
+          image: "ghcr.io/keel-hq/keel:0.22.3"
           imagePullPolicy: IfNotPresent
           command: ["/bin/keel"]
           env:
