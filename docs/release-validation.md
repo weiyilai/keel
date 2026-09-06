@@ -1,25 +1,26 @@
 # Release process and validation
 
-This document describes the release path as audited on 2026-08-14. Local release validation is read-only with respect to GitHub and public registries. It never creates tags, releases, images, or charts.
+This document describes the release path as audited on 2026-08-30. Local release validation is read-only with respect to GitHub and public registries. It never creates tags, releases, images, or charts.
 
 ## Release paths and version contract
 
 Keel has two related release paths.
 
-An application release starts with a SemVer Git tag such as `0.22.1`. `.github/workflows/ci.yml` runs Go tests, the UI install/typecheck/lint/test/build, API generation checks, and the packaged-chart k3s suite before any image job can publish. Native amd64 and arm64 jobs build `Dockerfile`, push content-addressed images without tags to both `ghcr.io/keel-hq/keel` and `keelhq/keel` on Docker Hub, and the manifest job creates the version tag and `latest` on both registries only after both digests exist. It then verifies that every produced tag resolves to the same amd64/arm64 index on both registries. Only after that verification does the final job create the public GitHub Release from the existing tag. The workflow needs `contents: read`; only image publication jobs receive `packages: write`, and only the final release job receives `contents: write`. Docker Hub publication uses the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repository secrets and reuses the same refuse-to-overwrite-published-tag guard as GHCR. Pull requests do not log in or publish; they are validated by the both-arch `docker-pr` build.
+An application release starts with a SemVer Git tag such as `0.22.2`. `.github/workflows/ci.yml` runs Go tests, the UI install/typecheck/lint/test/build, API generation checks, and the packaged-chart k3s suite before any image job can publish. Native amd64 and arm64 jobs build `Dockerfile`, push content-addressed images without tags to `ghcr.io/keel-hq/keel`, and the manifest job creates the version tag and `latest` only after both digests exist. It then verifies that every produced tag resolves to the same amd64/arm64 index. Only after that verification does the workflow create the public GitHub Release from the existing tag and call the chart workflow to publish the matching `Chart.yaml.version`. The application tag must equal `Chart.yaml.appVersion`, so a successful application release always has a chart that installs the same image version. Pull requests do not log in or publish; they are validated by the both-arch `docker-pr` build.
 
-A chart release starts with `chart-v<Chart.yaml version>`. `.github/workflows/releasecharts.yaml` validates the tag, packages the source chart without editing it, and confirms that `Chart.yaml.appVersion` already has a public GitHub application release and amd64/arm64 GHCR image. Only then does chart-releaser package the chart, create the `keel-v<chart version>` GitHub release asset, and update the GitHub Pages Helm index. The validation job has `contents: read`; only chart-releaser receives `contents: write`. The workflow cannot run from `pull_request`.
+`.github/workflows/releasecharts.yaml` is a reusable workflow called automatically by a successful application-tag run. It can also be invoked by `workflow_dispatch` or an explicitly authorized `chart-v<Chart.yaml version>` tag for chart-only releases and recovery. It validates the source metadata, applies the historical leading `v` only to the packaged chart version, and confirms that `Chart.yaml.appVersion` already has a public GitHub application release and amd64/arm64 GHCR image. Only then does chart-releaser create the `keel-v<chart version>` GitHub release asset and update the GitHub Pages Helm index. The validation job has `contents: read`; only chart-releaser receives `contents: write`.
 
 `chart/keel/Chart.yaml` is the release contract:
 
-- The SemVer application Git tag is the canonical application build version. `scripts/resolve-application-version.sh` uses it for application-tag builds, so an application release is not blocked by a chart that intentionally references an older application.
-- `appVersion` is the application version installed by the source chart. Before publishing that chart, it must exactly match an existing application GitHub Release and amd64/arm64 GHCR image.
-- `version` is the canonical source chart version; the trigger must be `chart-v${version}`. The shared packager and the chart release's temporary checkout add the historical leading `v` to packaged chart metadata and filenames.
-- The application Git tag is plain SemVer (e.g. `0.22.1`). It names the Docker image tag on **both** registries (`ghcr.io/keel-hq/keel:<version>` and `keelhq/keel:<version>`) plus `latest`. The `keel-v*` Git-tag form belongs **only** to chart releases (it is the GitHub release asset name emitted by a `chart-v*` tag); it is not an application image tag and must never be used to publish an application image.
+- The SemVer application Git tag is the canonical application build version. `scripts/resolve-application-version.sh` uses it for application-tag builds, and packaging rejects the tag unless it equals the source chart's `appVersion`.
+- `appVersion` is the application version installed by the source chart. Before tagging an application, it must be set to that application version; before publishing the chart, it must exactly match an existing application GitHub Release and amd64/arm64 GHCR image.
+- `version` is the canonical source chart version. Application releases publish it automatically; an optional chart-only trigger must be `chart-v${version}`. The shared packager and the chart release's temporary checkout add the historical leading `v` to packaged chart metadata and filenames.
+- Any committed change under `chart/keel/` must increase `version`. CI compares the candidate against the pull-request base or preceding `master` commit and fails before packaging when chart content changed without a version increase.
+- The application Git tag is plain SemVer (e.g. `0.22.2`). It names the `ghcr.io/keel-hq/keel:<version>` image tag plus `latest`. The `keel-v*` Git-tag form belongs **only** to chart releases (it is the GitHub release asset name emitted by chart-releaser); it is not an application image tag and must never be used to publish an application image.
 - `Dockerfile` receives the validated application version and Git revision as build arguments. Its fallback tag discovery remains available for ordinary developer builds.
 - The chart defaults its image tag to `appVersion`. Validation renders and inspects that exact wiring and packages with explicit `--version` and `--app-version` arguments.
 
-This makes tag, binary, container, and chart drift fail before publication without coupling the application release train to chart publication. A chart release also refuses to run when its GitHub release or Helm index version already exists. An application image release refuses to overwrite an existing published release tag on **either** registry (GHCR and `keelhq/keel` on Docker Hub). Branch tags such as `master` retain their existing mutable semantics. Application and chart releases use global concurrency groups so two versions cannot race while updating `latest` or the Helm index.
+This makes tag, binary, container, and chart drift fail before publication. The application tag's package gate and the downstream chart workflow both refuse to proceed when the chart's GitHub release or Helm index version already exists. An application image release refuses to overwrite an existing GHCR release tag. Branch tags such as `master` retain their existing mutable semantics. Application and chart releases use global concurrency groups so two versions cannot race while updating `latest` or the Helm index.
 
 ## Local commands
 
@@ -44,26 +45,26 @@ make published-release-check
 For a tag rehearsal without publishing, set `GITHUB_REF` locally. These examples should pass only when metadata agrees:
 
 ```bash
-GITHUB_REF=refs/tags/0.22.1 make release-package
-GITHUB_REF=refs/tags/chart-v1.2.0 KEEL_RELEASE_SKIP_IMAGE=true make release-package
+GITHUB_REF=refs/tags/0.22.2 make release-package
+GITHUB_REF=refs/tags/chart-v1.2.1 KEEL_RELEASE_SKIP_IMAGE=true make release-package
 ```
 
 ## Publishing sequence
 
-Prepare release metadata through a PR and run `make release-validate` whenever the chart changes. After the release commit is merged and its `master` CI succeeds, push only an annotated application tag:
+Prepare release metadata through a PR: set `Chart.yaml.appVersion` to the application version and increase `Chart.yaml.version`. Run `make release-validate`, merge the PR, and wait for its `master` CI. Then push only an annotated application tag:
 
 ```bash
-git tag -a 0.22.1 -m "Keel 0.22.1" <release-commit>
-git push origin 0.22.1
+git tag -a 0.22.2 -m "Keel 0.22.2" <release-commit>
+git push origin 0.22.2
 ```
 
-Do not create the GitHub Release manually. The tag CI publishes and verifies the versioned GHCR image and `latest`, then creates the GitHub Release as its final job. Creating a GitHub Release first publishes user-visible metadata before the release artifacts have passed validation.
+Do not create the GitHub Release or ordinary matching chart release manually. The tag CI publishes and verifies the versioned GHCR image and `latest`, creates the GitHub Release, then invokes the guarded chart workflow. Creating either release first publishes user-visible metadata before its dependencies have passed validation.
 
-To publish the chart after the application release is verified, push the chart tag from the same release commit:
+For an explicitly authorized chart-only change, push the chart tag from its validated release commit:
 
 ```bash
-git tag -a chart-v1.2.0 -m "Keel chart v1.2.0" <release-commit>
-git push origin chart-v1.2.0
+git tag -a chart-v1.2.1 -m "Keel chart v1.2.1" <release-commit>
+git push origin chart-v1.2.1
 ```
 
 Follow `.agents/skills/release-keel/SKILL.md` for the agent-operated readiness, publication, verification, and recovery workflow.
@@ -97,9 +98,9 @@ kubectl --namespace <namespace> rollout status deployment/keel --timeout=3m
 
 The read-only check currently records:
 
-- GitHub application release `0.21.1`, GHCR `ghcr.io/keel-hq/keel:0.21.1`, and a Linux amd64/arm64 OCI index.
-- Docker Hub `keelhq/keel:<version>` now receives the same versioned tag and `latest` as an amd64/arm64 index, published from the same per-arch digests as GHCR. Historical Docker Hub gaps (missing/`wrong-arch` `keelhq/keel:0.21.0`, plus the long-standing arm64 gap) are closed going forward; already-missing historical tags are re-published manually (see the release checklist) rather than re-publishing immutable releases.
-- Helm index/chart `v1.0.5`, archive digest `8826a68c962d2641232897997f4fb2b547b6f1d252bffa8e9860113361cfb938`, `appVersion: 0.20.0`, and its available Docker Hub image.
+- GitHub application release `0.22.2`, GHCR `ghcr.io/keel-hq/keel:0.22.2`, and a Linux amd64/arm64 OCI index (`sha256:ca363f90057e1e93d8f7b88b14e991c6e5f2b6ab56229fbf544f238145bff40d`).
+- Docker Hub is not a release publication target. Its `keelhq/keel` tags may be stale or missing; supported release images are published to GHCR.
+- Helm index/chart `v1.2.1`, archive digest `710eac738a7e58e3624c7f449b5e9df3ca6498985bd463696b5652715f3d3b41`, `appVersion: 0.22.2`, and `ghcr.io/keel-hq/keel:0.22.2`.
 - The chart release asset and Helm index URL/checksum agree exactly.
 
 There are no release checksums attached separately to application GitHub releases, chart provenance (`.prov`), signatures, attestations, or SBOM artifacts in the audited process. GHCR's index currently includes attestations emitted by the image build, but their predicate and signer are not part of a documented verification contract. Adding keyless signing, verified provenance, and SBOM policy should be a separately scoped release-security change.

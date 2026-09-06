@@ -24,7 +24,9 @@ ARMFLAGS		+= -X github.com/keel-hq/keel/version.BuildDate=$(JOBDATE)
 
 release-lint:
 	bash -n .test/*.sh scripts/*.sh
+	./.test/chart-version.sh
 	./.test/release-version.sh
+	./.test/release-workflow.sh
 	go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
 
 release-package:
